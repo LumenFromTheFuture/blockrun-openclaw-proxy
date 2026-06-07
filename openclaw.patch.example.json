@@ -1,0 +1,25 @@
+{
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "blockrun-x402": {
+        "baseUrl": "http://127.0.0.1:8787/v1",
+        "apiKey": "not-required",
+        "auth": "api-key",
+        "api": "openai-completions",
+        "injectNumCtxForOpenAICompat": false,
+        "timeoutSeconds": 180,
+        "models": [
+          {
+            "id": "blockrun-x402/google/gemini-3-flash-preview",
+            "name": "BlockRun Gemini 3 Flash Preview",
+            "api": "openai-completions",
+            "contextWindow": 1000000,
+            "maxTokens": 8192,
+            "input": ["text"]
+          }
+        ]
+      }
+    }
+  }
+}

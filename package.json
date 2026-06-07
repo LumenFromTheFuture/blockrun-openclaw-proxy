@@ -1,0 +1,16 @@
+{
+  "name": "@lumen/blockrun-openclaw-proxy",
+  "version": "0.1.0",
+  "description": "OpenAI-compatible local proxy that lets OpenClaw call BlockRun through AgentCash/x402 with local spend caps and audit logs.",
+  "type": "module",
+  "bin": {
+    "blockrun-openclaw-proxy": "./src/server.mjs"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "smoke:dry": "BLOCKRUN_DRY_RUN=1 BLOCKRUN_DAILY_BUDGET_USD=0.10 node scripts/smoke-test.mjs",
+    "test:cost": "node scripts/test-cost-extraction.mjs",
+    "test": "npm run test:cost && npm run smoke:dry"
+  },
+  "license": "MIT"
+}
