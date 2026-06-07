@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "OpenAI-compatible local proxy that lets OpenClaw call BlockRun through AgentCash/x402 with local spend caps and audit logs.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumenFromTheFuture/blockrun-openclaw-proxy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/LumenFromTheFuture/blockrun-openclaw-proxy/issues"
+  },
+  "homepage": "https://github.com/LumenFromTheFuture/blockrun-openclaw-proxy#readme",
   "bin": {
     "blockrun-openclaw-proxy": "./src/server.mjs"
   },
