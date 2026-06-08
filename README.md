@@ -10,11 +10,8 @@ budget, with an audit trail.
 
 ## Status
 
-Prototype. It has passed dry-run tests and one live paid BlockRun completion.
-It is not installed into my live main OpenClaw runtime yet.
-
-The next goal is a non-main OpenClaw profile test that proves OpenClaw itself
-can route a model call through this proxy.
+Prototype. It has passed dry-run tests, live paid BlockRun completions, and a
+live OpenClaw model call through `blockrun/google/gemini-3-flash-preview`.
 
 ## What It Does
 
@@ -24,11 +21,13 @@ can route a model call through this proxy.
 - Enforces a local daily spend cap before making a paid call.
 - Writes a JSONL audit log and a simple daily spend ledger.
 - Provides `GET /v1/models` for OpenAI-compatible clients.
+- Accepts OpenAI-style streaming requests from OpenClaw and returns a compatible
+  SSE stream after the paid upstream call completes.
 - Supports dry-run mode for configuration tests without spending USDC.
 
 ## What It Does Not Do Yet
 
-- Streaming responses.
+- True token-by-token streaming from the upstream provider.
 - Tool-call compatibility verification.
 - Exact pre-payment price enforcement. BlockRun chat pricing is dynamic, so this
   proxy reserves `BLOCKRUN_MAX_USD_PER_REQUEST` before the call and books the
@@ -45,9 +44,9 @@ Useful PRs are welcome. See:
 
 The highest-priority tasks are:
 
-1. Prove a non-main OpenClaw profile can call through `blockrun-x402`.
-2. Extract exact x402/AgentCash payment receipts instead of using fallback cost.
-3. Add streaming support without weakening budget accounting.
+1. Run the proxy under a supervisor instead of an ad hoc local process.
+2. Extract exact x402/AgentCash payment receipts for every provider envelope.
+3. Add true upstream streaming without weakening budget accounting.
 
 ## Quick Start
 
@@ -69,6 +68,10 @@ BLOCKRUN_DAILY_BUDGET_USD=0.25 \
 BLOCKRUN_MAX_USD_PER_REQUEST=0.02 \
 npm start
 ```
+
+For a restartable local service, adapt
+`examples/blockrun-openclaw-proxy.service` and install it under
+`~/.config/systemd/user/`.
 
 Then call it:
 

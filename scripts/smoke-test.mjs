@@ -36,6 +36,24 @@ try {
   if (body.choices?.[0]?.message?.content !== 'blockrun-openclaw-proxy dry run ok') {
     throw new Error(`unexpected response: ${JSON.stringify(body)}`);
   }
+  const streamResponse = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'google/gemini-3-flash-preview',
+      messages: [{ role: 'user', content: 'Say ok.' }],
+      max_tokens: 8,
+      temperature: 0,
+      stream: true,
+    }),
+  });
+  const streamBody = await streamResponse.text();
+  if (!streamResponse.ok) {
+    throw new Error(`stream HTTP ${streamResponse.status}: ${streamBody}`);
+  }
+  if (!streamBody.includes('data: [DONE]')) {
+    throw new Error(`stream did not terminate correctly: ${streamBody}`);
+  }
   console.log('dry smoke test passed');
 } finally {
   child.kill('SIGTERM');

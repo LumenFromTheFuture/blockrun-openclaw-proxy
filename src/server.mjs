@@ -101,7 +101,6 @@ function validateChatRequest(body) {
   if (!body || typeof body !== 'object') return 'body must be a JSON object';
   if (typeof body.model !== 'string' || !body.model) return 'model is required';
   if (!Array.isArray(body.messages) || body.messages.length === 0) return 'messages must be a non-empty array';
-  if (body.stream) return 'streaming is not supported by this proxy yet';
   if (!config.models.includes(body.model)) {
     return `model ${body.model} is not allowed by BLOCKRUN_MODELS`;
   }
@@ -200,6 +199,56 @@ function isChatCompletion(value) {
     && value.choices[0]?.message;
 }
 
+function completionToStream(completion) {
+  const choice = completion.choices?.[0] || {};
+  const message = choice.message || {};
+  return [
+    {
+      id: completion.id || `chatcmpl-blockrun-${Date.now()}`,
+      object: 'chat.completion.chunk',
+      created: completion.created || Math.floor(Date.now() / 1000),
+      model: completion.model,
+      choices: [
+        {
+          index: choice.index || 0,
+          delta: {
+            role: message.role || 'assistant',
+            content: message.content || '',
+          },
+          finish_reason: null,
+        },
+      ],
+    },
+    {
+      id: completion.id || `chatcmpl-blockrun-${Date.now()}`,
+      object: 'chat.completion.chunk',
+      created: completion.created || Math.floor(Date.now() / 1000),
+      model: completion.model,
+      choices: [
+        {
+          index: choice.index || 0,
+          delta: {},
+          finish_reason: choice.finish_reason || 'stop',
+        },
+      ],
+    },
+  ];
+}
+
+function streamResponse(res, completion, headers = {}) {
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache, no-transform',
+    connection: 'keep-alive',
+    ...headers,
+  });
+  for (const chunk of completionToStream(completion)) {
+    res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+  }
+  res.write('data: [DONE]\n\n');
+  res.end();
+}
+
 function findCostUsd(value) {
   const seen = new Set();
   const queue = [{ value, path: [] }];
@@ -265,7 +314,10 @@ async function handleChat(req, res) {
 
   const started = Date.now();
   try {
-    const raw = config.dryRun ? dryRunCompletion(body) : await callAgentCash(body);
+    const upstreamBody = body.stream
+      ? Object.fromEntries(Object.entries(body).filter(([key]) => key !== 'stream' && key !== 'stream_options'))
+      : body;
+    const raw = config.dryRun ? dryRunCompletion(upstreamBody) : await callAgentCash(upstreamBody);
     const upstream = unwrapAgentCash(raw);
     const actualCost = config.dryRun ? 0 : findCostUsd(raw);
     const bookedCost = actualCost ?? (config.unknownCostUsd > 0 ? config.unknownCostUsd : config.maxUsdPerRequest);
@@ -274,15 +326,21 @@ async function handleChat(req, res) {
       event: 'chat_completion',
       model: body.model,
       dryRun: config.dryRun,
+      streamed: Boolean(body.stream),
       durationMs: Date.now() - started,
       actualCostUsd: actualCost,
       bookedCostUsd: bookedCost,
       spentTodayUsd: ledger.spentUsd,
     });
-    jsonResponse(res, 200, upstream, {
+    const responseHeaders = {
       'x-blockrun-proxy-booked-cost-usd': String(bookedCost),
       'x-blockrun-proxy-spent-today-usd': String(ledger.spentUsd),
-    });
+    };
+    if (body.stream && isChatCompletion(upstream)) {
+      streamResponse(res, upstream, responseHeaders);
+    } else {
+      jsonResponse(res, 200, upstream, responseHeaders);
+    }
   } catch (error) {
     await appendAudit({
       event: 'upstream_error',

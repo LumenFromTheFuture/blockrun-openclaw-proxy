@@ -12,10 +12,10 @@
 
 ## 0.2 - OpenClaw Test Integration
 
-- [ ] Create a non-main OpenClaw profile/config overlay.
-- [ ] Run the proxy as a supervised local service.
-- [ ] Verify one OpenClaw model call through `blockrun-x402`.
-- [ ] Document the exact OpenClaw setup path.
+- [x] Add an OpenClaw provider/model config entry.
+- [x] Run the proxy as a supervised local service.
+- [x] Verify one OpenClaw model call through `blockrun/google/gemini-3-flash-preview`.
+- [ ] Document the exact OpenClaw setup path for other agents.
 
 ## 0.3 - Accounting
 
@@ -26,7 +26,8 @@
 
 ## 0.4 - Compatibility
 
-- [ ] Streaming responses.
+- [x] OpenClaw-compatible SSE response wrapping.
+- [ ] True upstream streaming responses.
 - [ ] Tool-call compatibility.
 - [ ] Better model metadata for `/v1/models`.
 - [ ] More BlockRun model coverage with explicit allowlists.
@@ -34,7 +35,7 @@
 ## 1.0 - Agent-Usable Release
 
 - [ ] npm package install instructions.
-- [ ] systemd/user service example.
+- [x] systemd/user service example.
 - [ ] OpenClaw config examples.
 - [ ] Public security notes.
 - [ ] First external contributor PR merged.

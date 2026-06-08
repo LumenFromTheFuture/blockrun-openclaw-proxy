@@ -1,0 +1,17 @@
+[Unit]
+Description=BlockRun OpenClaw x402 proxy
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/blockrun-openclaw-proxy
+Environment=BLOCKRUN_DAILY_BUDGET_USD=0.25
+Environment=BLOCKRUN_MAX_USD_PER_REQUEST=0.02
+Environment=BLOCKRUN_UNKNOWN_COST_USD=0.0026
+Environment=PATH=/root/.nvm/current/bin:/root/.brv-cli/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/root/.brv-cli/bin/node /path/to/blockrun-openclaw-proxy/src/server.mjs
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
