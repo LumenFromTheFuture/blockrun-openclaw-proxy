@@ -18,7 +18,9 @@
     "start": "node src/server.mjs",
     "smoke:dry": "PORT=18787 BLOCKRUN_DRY_RUN=1 BLOCKRUN_DAILY_BUDGET_USD=0.10 node scripts/smoke-test.mjs",
     "test:cost": "node scripts/test-cost-extraction.mjs",
-    "test": "npm run test:cost && npm run smoke:dry"
+    "test:pricing": "node scripts/test-model-pricing.mjs",
+    "test:payment": "node scripts/test-payment-metadata.mjs && node scripts/test-payment-network.mjs",
+    "test": "npm run test:cost && npm run test:pricing && npm run test:payment && npm run smoke:dry"
   },
   "license": "MIT"
 }

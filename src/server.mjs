@@ -16,6 +16,12 @@ const DEFAULT_MODELS = [
   'xai/grok-4.3',
 ];
 
+const PRICING = {
+  'google/gemini-3-flash-preview': { prompt: 0.0000001, completion: 0.0000003 },
+  'openai/gpt-5.4-mini': { prompt: 0.00000015, completion: 0.0000006 },
+  'openai/gpt-5.4-nano': { prompt: 0.00000005, completion: 0.00000015 },
+};
+
 const config = {
   port: numberEnv('PORT', 8787),
   host: process.env.HOST || '127.0.0.1',
@@ -60,9 +66,15 @@ async function ensureParent(path) {
   await mkdir(dirname(path), { recursive: true });
 }
 
-async function getSpentToday() {
-  const ledger = await readJsonFile(config.ledgerFile, {});
-  return Number(ledger[todayKey()]?.spentUsd || 0);
+function getSpentToday() {
+  return readJsonFile(config.ledgerFile, {}).then((ledger) => Number(ledger[todayKey()]?.spentUsd || 0));
+}
+
+function getEstimatedCost(model, promptTokens) {
+  const price = PRICING[model];
+  if (!price) return config.maxUsdPerRequest;
+  // Estimate total cost assuming 1:1 prompt/completion ratio for a safe upper bound
+  return Number((promptTokens * (price.prompt + price.completion)).toFixed(8));
 }
 
 async function addSpend(amountUsd) {
@@ -131,7 +143,7 @@ function dryRunCompletion(body) {
   };
 }
 
-async function callAgentCash(body) {
+async function callAgentCash(body, onChunk) {
   const args = [
     'agentcash@latest',
     'fetch',
@@ -158,7 +170,11 @@ async function callAgentCash(body) {
     }, config.timeoutMs);
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stdout.on('data', (chunk) => {
+      const str = chunk.toString();
+      stdout += str;
+      if (onChunk) onChunk(str);
+    });
     child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
     child.on('error', reject);
     child.on('close', (code) => {
@@ -259,7 +275,7 @@ function findCostUsd(value) {
     seen.add(item.value);
     for (const [key, child] of Object.entries(item.value)) {
       const path = [...item.path, key];
-      const isCostKey = /(^|_|\.)((cost|price|paid|amount)(_?usd)?|total)$/i.test(path.join('.'));
+      const isCostKey = isCostPath(path);
       
       if (typeof child === 'number' && isCostKey) {
         candidates.push(child);
@@ -278,6 +294,69 @@ function findCostUsd(value) {
   return positive.length ? Math.max(...positive) : null;
 }
 
+function findPaymentMetadata(value) {
+  const seen = new Set();
+  const queue = [{ value, path: [] }];
+  let paymentNetwork = null;
+  let receiptRef = null;
+
+  while (queue.length) {
+    const item = queue.shift();
+    if (!item.value || typeof item.value !== 'object' || seen.has(item.value)) continue;
+    seen.add(item.value);
+    for (const [key, child] of Object.entries(item.value)) {
+      const path = [...item.path, key];
+      if (typeof child === 'string') {
+        if (!paymentNetwork && isPaymentNetworkPath(path)) {
+          paymentNetwork = child;
+        }
+        if (!receiptRef && isReceiptPath(path) && isReceiptValue(child)) {
+          receiptRef = child;
+        }
+      } else if (child && typeof child === 'object') {
+        queue.push({ value: child, path });
+      }
+    }
+  }
+
+  return { paymentNetwork, receiptRef };
+}
+
+function isCostPath(path) {
+  const joined = path.join('.').toLowerCase();
+  const leaf = String(path[path.length - 1] || '').toLowerCase();
+  return [
+    /(^|[._-])(cost|price|paid)([._-]|$)/,
+    /(^|[._-])(amount|total)[._-]?usd([._-]|$)/,
+    /(^|[._-])usd[._-]?(amount|total)([._-]|$)/,
+  ].some((pattern) => pattern.test(joined) || pattern.test(leaf));
+}
+
+function isPaymentNetworkPath(path) {
+  const joined = path.join('.').toLowerCase();
+  const leaf = String(path[path.length - 1] || '').toLowerCase();
+  return joined === 'metadata.network'
+    || joined === 'payment.network'
+    || joined === 'metadata.payment.network'
+    || leaf === 'paymentnetwork'
+    || leaf === 'payment_network';
+}
+
+function isReceiptPath(path) {
+  const joined = path.join('.').toLowerCase();
+  const leaf = String(path[path.length - 1] || '').toLowerCase();
+  return [
+    /^metadata\.payment\.(transactionhash|txhash|receipt(id|ref)?|reference)$/i,
+    /^payment\.(transactionhash|txhash|receipt(id|ref)?|reference)$/i,
+    /(^|[._-])(transactionhash|txhash|receipthash|receiptid|receiptref|paymentid|paymentref|reference|receipt_ref)([._-]|$)/i,
+  ].some((pattern) => pattern.test(joined) || pattern.test(leaf));
+}
+
+function isReceiptValue(value) {
+  return /^0x[a-f0-9]{64}$/i.test(value)
+    || /^[a-z0-9][a-z0-9:_-]{7,}$/i.test(value);
+}
+
 async function handleChat(req, res) {
   let body;
   try {
@@ -294,19 +373,22 @@ async function handleChat(req, res) {
   }
 
   const spentToday = await getSpentToday();
-  if (spentToday + config.maxUsdPerRequest > config.dailyBudgetUsd) {
+  const estimatedCost = getEstimatedCost(body.model, body.messages.reduce((acc, m) => acc + (m.content?.length || 0) / 4, 0));
+
+  if (spentToday + estimatedCost > config.dailyBudgetUsd) {
     await appendAudit({
       event: 'budget_reject',
       model: body.model,
       spentToday,
       dailyBudgetUsd: config.dailyBudgetUsd,
-      maxUsdPerRequest: config.maxUsdPerRequest,
+      estimatedCost,
     });
     jsonResponse(res, 402, {
       error: {
-        message: 'local BlockRun proxy budget exhausted',
+        message: 'local BlockRun proxy budget exhausted (pre-request check)',
         spent_today_usd: spentToday,
         daily_budget_usd: config.dailyBudgetUsd,
+        estimated_cost_usd: estimatedCost,
       },
     });
     return;
@@ -317,9 +399,39 @@ async function handleChat(req, res) {
     const upstreamBody = body.stream
       ? Object.fromEntries(Object.entries(body).filter(([key]) => key !== 'stream' && key !== 'stream_options'))
       : body;
-    const raw = config.dryRun ? dryRunCompletion(upstreamBody) : await callAgentCash(upstreamBody);
+
+    let streamed = false;
+    const raw = config.dryRun
+      ? dryRunCompletion(upstreamBody)
+      : await callAgentCash(upstreamBody, (chunk) => {
+        if (body.stream && !streamed && chunk.includes('"choices"')) {
+          res.writeHead(200, {
+            'content-type': 'text/event-stream; charset=utf-8',
+            'cache-control': 'no-cache, no-transform',
+            connection: 'keep-alive',
+          });
+          streamed = true;
+        }
+        if (streamed) {
+          try {
+            const parsed = JSON.parse(chunk);
+            const unwrapped = unwrapAgentCash(parsed);
+            if (isChatCompletion(unwrapped)) {
+              for (const sChunk of completionToStream(unwrapped)) {
+                res.write(`data: ${JSON.stringify(sChunk)}\n\n`);
+              }
+            }
+          } catch {
+            // Partial chunk or non-JSON
+          }
+        }
+      });
+
     const upstream = unwrapAgentCash(raw);
     const actualCost = config.dryRun ? 0 : findCostUsd(raw);
+    const paymentMetadata = config.dryRun
+      ? { paymentNetwork: null, receiptRef: null }
+      : findPaymentMetadata(raw);
     const bookedCost = actualCost ?? (config.unknownCostUsd > 0 ? config.unknownCostUsd : config.maxUsdPerRequest);
     const ledger = await addSpend(bookedCost);
     await appendAudit({
@@ -330,16 +442,24 @@ async function handleChat(req, res) {
       durationMs: Date.now() - started,
       actualCostUsd: actualCost,
       bookedCostUsd: bookedCost,
+      paymentNetwork: paymentMetadata.paymentNetwork,
+      receiptRef: paymentMetadata.receiptRef,
       spentTodayUsd: ledger.spentUsd,
     });
-    const responseHeaders = {
-      'x-blockrun-proxy-booked-cost-usd': String(bookedCost),
-      'x-blockrun-proxy-spent-today-usd': String(ledger.spentUsd),
-    };
-    if (body.stream && isChatCompletion(upstream)) {
-      streamResponse(res, upstream, responseHeaders);
+
+    if (streamed) {
+      res.write('data: [DONE]\n\n');
+      res.end();
     } else {
-      jsonResponse(res, 200, upstream, responseHeaders);
+      const responseHeaders = {
+        'x-blockrun-proxy-booked-cost-usd': String(bookedCost),
+        'x-blockrun-proxy-spent-today-usd': String(ledger.spentUsd),
+      };
+      if (body.stream && isChatCompletion(upstream)) {
+        streamResponse(res, upstream, responseHeaders);
+      } else {
+        jsonResponse(res, 200, upstream, responseHeaders);
+      }
     }
   } catch (error) {
     await appendAudit({

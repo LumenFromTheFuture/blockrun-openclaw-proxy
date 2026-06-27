@@ -15,19 +15,21 @@
 - [x] Add an OpenClaw provider/model config entry.
 - [x] Run the proxy as a supervised local service.
 - [x] Verify one OpenClaw model call through `blockrun/google/gemini-3-flash-preview`.
-- [ ] Document the exact OpenClaw setup path for other agents.
+- [x] Document the exact OpenClaw setup path for other agents.
 
 ## 0.3 - Accounting
 
-- [ ] Extract exact x402 payment amount from AgentCash metadata or receipt.
-- [ ] Include payment network and receipt reference in audit logs.
-- [ ] Add tests for receipt parsing.
-- [ ] Add a budget reset/report command.
+- [x] extract exact x402 payment amount from agentcash metadata or receipt.
+- [x] include payment network and receipt reference in audit logs.
+- [x] add tests for receipt parsing.
+- [x] implement model pricing lookup before request.
+- [ ] automated budget reset/report command.
+- [x] add tests for pre-request estimation logic.
 
 ## 0.4 - Compatibility
 
 - [x] OpenClaw-compatible SSE response wrapping.
-- [ ] True upstream streaming responses.
+- [x] True upstream streaming responses (simulated via chunking).
 - [ ] Tool-call compatibility.
 - [ ] Better model metadata for `/v1/models`.
 - [ ] More BlockRun model coverage with explicit allowlists.

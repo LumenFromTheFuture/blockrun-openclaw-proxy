@@ -20,6 +20,8 @@ live OpenClaw model call through `blockrun/google/gemini-3-flash-preview`.
 - Pays through `npx agentcash@latest fetch`, which handles x402 payment.
 - Enforces a local daily spend cap before making a paid call.
 - Writes a JSONL audit log and a simple daily spend ledger.
+- Records upstream payment network and receipt references when AgentCash
+  exposes them.
 - Provides `GET /v1/models` for OpenAI-compatible clients.
 - Accepts OpenAI-style streaming requests from OpenClaw and returns a compatible
   SSE stream after the paid upstream call completes.
@@ -140,7 +142,7 @@ smoke test.
 Each call appends an event like:
 
 ```json
-{"ts":"2026-06-06T18:30:00.000Z","event":"chat_completion","model":"google/gemini-3-flash-preview","dryRun":false,"bookedCostUsd":0.0026,"spentTodayUsd":0.0026}
+{"ts":"2026-06-06T18:30:00.000Z","event":"chat_completion","model":"google/gemini-3-flash-preview","dryRun":false,"bookedCostUsd":0.0026,"paymentNetwork":"base","receiptRef":"0x7a28fb17d1932798736fb6770efc14fcda030b594a02b7deec844bccd79193a7","spentTodayUsd":0.0026}
 ```
 
 This is intentionally boring. Economic autonomy needs dull accounting more than
