@@ -8,18 +8,31 @@ import { dirname, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 
 const DEFAULT_MODELS = [
-  'google/gemini-3-flash-preview',
+  'openai/gpt-5.5',
+  'openai/gpt-5.4',
   'openai/gpt-5.4-mini',
-  'openai/gpt-5.4-nano',
-  'anthropic/claude-haiku-4.5',
+  'anthropic/claude-sonnet-4.6',
+  'anthropic/claude-opus-4.8',
+  'google/gemini-3.1-pro',
+  'google/gemini-3-flash-preview',
+  'deepseek/deepseek-v4-pro',
   'deepseek/deepseek-chat',
+  'deepseek/deepseek-reasoner',
   'xai/grok-4.3',
 ];
 
 const PRICING = {
-  'google/gemini-3-flash-preview': { prompt: 0.0000001, completion: 0.0000003 },
-  'openai/gpt-5.4-mini': { prompt: 0.00000015, completion: 0.0000006 },
-  'openai/gpt-5.4-nano': { prompt: 0.00000005, completion: 0.00000015 },
+  'openai/gpt-5.5': { prompt: 0.000005, completion: 0.00003 },
+  'openai/gpt-5.4': { prompt: 0.0000025, completion: 0.000015 },
+  'openai/gpt-5.4-mini': { prompt: 0.00000075, completion: 0.0000045 },
+  'anthropic/claude-sonnet-4.6': { prompt: 0.000003, completion: 0.000015 },
+  'anthropic/claude-opus-4.8': { prompt: 0.000005, completion: 0.000025 },
+  'google/gemini-3.1-pro': { prompt: 0.000002, completion: 0.000012 },
+  'google/gemini-3-flash-preview': { prompt: 0.0000005, completion: 0.000003 },
+  'deepseek/deepseek-v4-pro': { prompt: 0.000000435, completion: 0.00000087 },
+  'deepseek/deepseek-chat': { prompt: 0.0000002, completion: 0.0000004 },
+  'deepseek/deepseek-reasoner': { prompt: 0.0000002, completion: 0.0000004 },
+  'xai/grok-4.3': { prompt: 0.0000015, completion: 0.000004 },
 };
 
 const config = {
@@ -120,6 +133,32 @@ function validateChatRequest(body) {
 }
 
 function dryRunCompletion(body) {
+  const toolCall = buildDryRunToolCall(body);
+  if (toolCall) {
+    return {
+      id: `chatcmpl-blockrun-dry-${Date.now()}`,
+      object: 'chat.completion',
+      created: Math.floor(Date.now() / 1000),
+      model: body.model,
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [toolCall],
+          },
+          finish_reason: 'tool_calls',
+        },
+      ],
+      usage: {
+        prompt_tokens: 1,
+        completion_tokens: 1,
+        total_tokens: 2,
+      },
+    };
+  }
+
   return {
     id: `chatcmpl-blockrun-dry-${Date.now()}`,
     object: 'chat.completion',
@@ -139,6 +178,24 @@ function dryRunCompletion(body) {
       prompt_tokens: 1,
       completion_tokens: 1,
       total_tokens: 2,
+    },
+  };
+}
+
+function buildDryRunToolCall(body) {
+  if (!Array.isArray(body.tools) || body.tools.length === 0) return null;
+  const requestedToolName = typeof body.tool_choice === 'object'
+    ? body.tool_choice?.function?.name
+    : null;
+  const selectedTool = body.tools.find((tool) => tool?.function?.name === requestedToolName) || body.tools[0];
+  const toolName = selectedTool?.function?.name;
+  if (!toolName) return null;
+  return {
+    id: `call_blockrun_dry_${Date.now()}`,
+    type: 'function',
+    function: {
+      name: toolName,
+      arguments: '{}',
     },
   };
 }
@@ -218,6 +275,20 @@ function isChatCompletion(value) {
 function completionToStream(completion) {
   const choice = completion.choices?.[0] || {};
   const message = choice.message || {};
+  const delta = {
+    role: message.role || 'assistant',
+  };
+  if (message.content !== undefined) {
+    delta.content = message.content;
+  }
+  if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+    delta.tool_calls = message.tool_calls.map((toolCall, index) => ({
+      index,
+      id: toolCall.id,
+      type: toolCall.type || 'function',
+      function: toolCall.function,
+    }));
+  }
   return [
     {
       id: completion.id || `chatcmpl-blockrun-${Date.now()}`,
@@ -227,10 +298,7 @@ function completionToStream(completion) {
       choices: [
         {
           index: choice.index || 0,
-          delta: {
-            role: message.role || 'assistant',
-            content: message.content || '',
-          },
+          delta,
           finish_reason: null,
         },
       ],
@@ -244,7 +312,7 @@ function completionToStream(completion) {
         {
           index: choice.index || 0,
           delta: {},
-          finish_reason: choice.finish_reason || 'stop',
+          finish_reason: choice.finish_reason || (delta.tool_calls ? 'tool_calls' : 'stop'),
         },
       ],
     },
@@ -472,14 +540,33 @@ async function handleChat(req, res) {
   }
 }
 
+const MODEL_METADATA = {
+  'openai/gpt-5.5': { contextWindow: 1050000, maxTokens: 128000 },
+  'openai/gpt-5.4': { contextWindow: 1050000, maxTokens: 128000 },
+  'openai/gpt-5.4-mini': { contextWindow: 400000, maxTokens: 128000 },
+  'anthropic/claude-sonnet-4.6': { contextWindow: 200000, maxTokens: 64000 },
+  'anthropic/claude-opus-4.8': { contextWindow: 1000000, maxTokens: 128000 },
+  'google/gemini-3.1-pro': { contextWindow: 1048576, maxTokens: 65536 },
+  'google/gemini-3-flash-preview': { contextWindow: 1048576, maxTokens: 65536 },
+  'deepseek/deepseek-v4-pro': { contextWindow: 1048576, maxTokens: 65536 },
+  'deepseek/deepseek-chat': { contextWindow: 1048576, maxTokens: 65536 },
+  'deepseek/deepseek-reasoner': { contextWindow: 1048576, maxTokens: 65536 },
+  'xai/grok-4.3': { contextWindow: 1000000, maxTokens: 16384 },
+};
+
 function handleModels(_req, res) {
   jsonResponse(res, 200, {
     object: 'list',
-    data: config.models.map((id) => ({
-      id,
-      object: 'model',
-      owned_by: 'blockrun',
-    })),
+    data: config.models.map((id) => {
+      const meta = MODEL_METADATA[id] || {};
+      return {
+        id,
+        object: 'model',
+        owned_by: 'blockrun',
+        context_window: meta.contextWindow || 128000,
+        max_tokens: meta.maxTokens || 4096,
+      };
+    }),
   });
 }
 
@@ -495,10 +582,36 @@ async function handleHealth(_req, res) {
   });
 }
 
+async function handleBudget(req, res, url) {
+  if (req.method === 'GET') {
+    const spent = await getSpentToday();
+    jsonResponse(res, 200, {
+      spent_today_usd: spent,
+      daily_budget_usd: config.dailyBudgetUsd,
+      remaining_usd: Math.max(0, Number((config.dailyBudgetUsd - spent).toFixed(8))),
+    });
+  } else if (req.method === 'POST' && (url.pathname === '/budget/reset' || url.pathname === '/v1/budget/reset')) {
+    const ledger = await readJsonFile(config.ledgerFile, {});
+    const day = todayKey();
+    if (ledger[day]) {
+      delete ledger[day];
+      await ensureParent(config.ledgerFile);
+      await writeFile(config.ledgerFile, `${JSON.stringify(ledger, null, 2)}\n`);
+    }
+    jsonResponse(res, 200, { ok: true, message: 'daily budget reset' });
+  } else {
+    jsonResponse(res, 405, { error: { message: 'method not allowed' } });
+  }
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || `${config.host}:${config.port}`}`);
   if (req.method === 'GET' && (url.pathname === '/health' || url.pathname === '/v1/health')) {
     await handleHealth(req, res);
+    return;
+  }
+  if (url.pathname === '/budget' || url.pathname === '/v1/budget' || url.pathname === '/budget/reset' || url.pathname === '/v1/budget/reset') {
+    await handleBudget(req, res, url);
     return;
   }
   if (req.method === 'GET' && url.pathname === '/v1/models') {
@@ -512,7 +625,28 @@ const server = createServer(async (req, res) => {
   jsonResponse(res, 404, { error: { message: 'not found' } });
 });
 
-server.listen(config.port, config.host, () => {
-  console.error(`blockrun-openclaw-proxy listening on http://${config.host}:${config.port}`);
-  console.error(`dry_run=${config.dryRun} daily_budget_usd=${config.dailyBudgetUsd} max_usd_per_request=${config.maxUsdPerRequest}`);
-});
+if (process.argv.includes('--report')) {
+  getSpentToday().then((spent) => {
+    console.log(`Spent today: $${spent.toFixed(8)} / $${config.dailyBudgetUsd.toFixed(8)}`);
+    console.log(`Remaining:   $${Math.max(0, Number((config.dailyBudgetUsd - spent).toFixed(8))).toFixed(8)}`);
+    process.exit(0);
+  });
+} else if (process.argv.includes('--reset')) {
+  readJsonFile(config.ledgerFile, {}).then(async (ledger) => {
+    const day = todayKey();
+    if (ledger[day]) {
+      delete ledger[day];
+      await ensureParent(config.ledgerFile);
+      await writeFile(config.ledgerFile, `${JSON.stringify(ledger, null, 2)}\n`);
+      console.log(`Daily budget reset for ${day}.`);
+    } else {
+      console.log(`No entries found for ${day}.`);
+    }
+    process.exit(0);
+  });
+} else {
+  server.listen(config.port, config.host, () => {
+    console.error(`blockrun-openclaw-proxy listening on http://${config.host}:${config.port}`);
+    console.error(`dry_run=${config.dryRun} daily_budget_usd=${config.dailyBudgetUsd} max_usd_per_request=${config.maxUsdPerRequest}`);
+  });
+}

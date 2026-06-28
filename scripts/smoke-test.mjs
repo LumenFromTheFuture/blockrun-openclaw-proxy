@@ -36,6 +36,40 @@ try {
   if (body.choices?.[0]?.message?.content !== 'blockrun-openclaw-proxy dry run ok') {
     throw new Error(`unexpected response: ${JSON.stringify(body)}`);
   }
+  const toolResponse = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'google/gemini-3-flash-preview',
+      messages: [{ role: 'user', content: 'Call the test tool.' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'lookup_balance',
+            description: 'Return a balance',
+            parameters: {
+              type: 'object',
+              properties: {},
+            },
+          },
+        },
+      ],
+      tool_choice: {
+        type: 'function',
+        function: { name: 'lookup_balance' },
+      },
+      temperature: 0,
+    }),
+  });
+  const toolBody = await toolResponse.json();
+  if (!toolResponse.ok) {
+    throw new Error(`tool HTTP ${toolResponse.status}: ${JSON.stringify(toolBody)}`);
+  }
+  const toolCall = toolBody.choices?.[0]?.message?.tool_calls?.[0];
+  if (toolBody.choices?.[0]?.finish_reason !== 'tool_calls' || toolCall?.function?.name !== 'lookup_balance') {
+    throw new Error(`tool call response mismatch: ${JSON.stringify(toolBody)}`);
+  }
   const streamResponse = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -53,6 +87,36 @@ try {
   }
   if (!streamBody.includes('data: [DONE]')) {
     throw new Error(`stream did not terminate correctly: ${streamBody}`);
+  }
+  const toolStreamResponse = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'google/gemini-3-flash-preview',
+      messages: [{ role: 'user', content: 'Call the test tool.' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'lookup_balance',
+            description: 'Return a balance',
+            parameters: {
+              type: 'object',
+              properties: {},
+            },
+          },
+        },
+      ],
+      stream: true,
+      temperature: 0,
+    }),
+  });
+  const toolStreamBody = await toolStreamResponse.text();
+  if (!toolStreamResponse.ok) {
+    throw new Error(`tool stream HTTP ${toolStreamResponse.status}: ${toolStreamBody}`);
+  }
+  if (!toolStreamBody.includes('"tool_calls"') || !toolStreamBody.includes('"lookup_balance"') || !toolStreamBody.includes('"finish_reason":"tool_calls"')) {
+    throw new Error(`tool stream did not preserve tool call data: ${toolStreamBody}`);
   }
   console.log('dry smoke test passed');
 } finally {

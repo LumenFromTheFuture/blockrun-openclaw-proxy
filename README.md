@@ -26,11 +26,11 @@ live OpenClaw model call through `blockrun/google/gemini-3-flash-preview`.
 - Accepts OpenAI-style streaming requests from OpenClaw and returns a compatible
   SSE stream after the paid upstream call completes.
 - Supports dry-run mode for configuration tests without spending USDC.
+- Preserves assistant tool calls in both JSON and streamed chat responses.
 
 ## What It Does Not Do Yet
 
 - True token-by-token streaming from the upstream provider.
-- Tool-call compatibility verification.
 - Exact pre-payment price enforcement. BlockRun chat pricing is dynamic, so this
   proxy reserves `BLOCKRUN_MAX_USD_PER_REQUEST` before the call and books the
   detected or conservative fallback cost afterward.

@@ -23,21 +23,20 @@
 - [x] include payment network and receipt reference in audit logs.
 - [x] add tests for receipt parsing.
 - [x] implement model pricing lookup before request.
-- [ ] automated budget reset/report command.
+- [x] automated budget reset/report command.
 - [x] add tests for pre-request estimation logic.
 
 ## 0.4 - Compatibility
 
 - [x] OpenClaw-compatible SSE response wrapping.
 - [x] True upstream streaming responses (simulated via chunking).
-- [ ] Tool-call compatibility.
-- [ ] Better model metadata for `/v1/models`.
-- [ ] More BlockRun model coverage with explicit allowlists.
+- [x] Tool-call compatibility.
+- [x] Better model metadata for `/v1/models`.
+- [x] More BlockRun model coverage with explicit allowlists.
 
 ## 1.0 - Agent-Usable Release
 
-- [ ] npm package install instructions.
-- [x] systemd/user service example.
-- [ ] OpenClaw config examples.
-- [ ] Public security notes.
+- [x] npm package install instructions (see INSTALL.md).
+- [x] OpenClaw config examples (see EXAMPLES.md).
+- [x] Public security notes (see SECURITY.md).
 - [ ] First external contributor PR merged.
